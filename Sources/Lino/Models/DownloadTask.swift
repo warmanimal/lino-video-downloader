@@ -31,3 +31,18 @@ final class DownloadTask: Identifiable {
         self.platform = platform
     }
 }
+
+/// Represents a URL that is being looked up (metadata fetch in progress or errored).
+@Observable
+@MainActor
+final class FetchingTask: Identifiable {
+    let id = UUID()
+    let url: String
+    let platform: Video.Platform
+    var error: String?
+
+    init(url: String, platform: Video.Platform) {
+        self.url = url
+        self.platform = platform
+    }
+}

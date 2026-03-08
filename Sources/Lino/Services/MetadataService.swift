@@ -123,4 +123,69 @@ actor MetadataService {
             throw MetadataServiceError.decodingFailed(error)
         }
     }
+
+    /// Returns a direct, AVPlayer-compatible stream URL for the given page URL.
+    /// Uses `--get-url` with a single-stream format so no merging is needed.
+    func fetchStreamURL(url: String) async throws -> URL {
+        let ytdlpPath = ytdlpPathProvider()
+
+        guard FileManager.default.isExecutableFile(atPath: ytdlpPath.path) else {
+            throw MetadataServiceError.ytdlpNotFound
+        }
+
+        let (data, errorData, status) = try await withCheckedThrowingContinuation {
+            (continuation: CheckedContinuation<(Data, Data, Int32), any Error>) in
+            DispatchQueue.global(qos: .userInitiated).async {
+                let process = Process()
+                process.executableURL = ytdlpPath
+                process.environment = Constants.subprocessEnvironment
+                var args = [
+                    "--get-url",
+                    "-f", "best[ext=mp4][height<=1080]/best[ext=mp4]/best",
+                    "--no-playlist",
+                    "--no-warnings",
+                ]
+                if let ffmpeg = Constants.ffmpegPath {
+                    args += ["--ffmpeg-location", ffmpeg.deletingLastPathComponent().path]
+                }
+                args.append(url)
+                process.arguments = args
+
+                let stdout = Pipe()
+                let stderr = Pipe()
+                process.standardOutput = stdout
+                process.standardError = stderr
+
+                do {
+                    try process.run()
+                } catch {
+                    continuation.resume(throwing: error)
+                    return
+                }
+
+                let outData = stdout.fileHandleForReading.readDataToEndOfFile()
+                let errData = stderr.fileHandleForReading.readDataToEndOfFile()
+                process.waitUntilExit()
+
+                continuation.resume(returning: (outData, errData, process.terminationStatus))
+            }
+        }
+
+        guard status == 0 else {
+            let errorString = String(data: errorData, encoding: .utf8) ?? "Unknown error"
+            throw MetadataServiceError.fetchFailed(errorString)
+        }
+
+        // Take the first non-empty line — some formats emit multiple URLs
+        let urlString = (String(data: data, encoding: .utf8) ?? "")
+            .components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .first(where: { !$0.isEmpty }) ?? ""
+
+        guard let streamURL = URL(string: urlString) else {
+            throw MetadataServiceError.fetchFailed("No stream URL found")
+        }
+
+        return streamURL
+    }
 }

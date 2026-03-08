@@ -66,7 +66,7 @@ private struct MenuBarPopoverContent: View {
                         }
                         .onSubmit {
                             if viewModel.isValidURL {
-                                Task { await viewModel.submit() }
+                                viewModel.submit()
                             }
                         }
 
@@ -90,40 +90,42 @@ private struct MenuBarPopoverContent: View {
                 TagInputView(tags: $viewModel.tags)
             }
 
-            // Status messages
+            // Validation error
             if let error = viewModel.errorMessage {
                 Label(error, systemImage: "exclamationmark.triangle")
                     .font(.caption)
                     .foregroundStyle(.red)
             }
 
-            if let success = viewModel.successMessage {
-                Label(success, systemImage: "checkmark.circle")
-                    .font(.caption)
-                    .foregroundStyle(.green)
-            }
-
-            // Download button
-            Button {
-                Task { await viewModel.submit() }
-            } label: {
-                HStack {
-                    if viewModel.isSubmitting {
-                        ProgressView()
-                            .controlSize(.small)
-                    }
-                    Text(viewModel.isSubmitting ? "Fetching..." : "Download")
+            // Save + Download buttons
+            HStack(spacing: 8) {
+                Button {
+                    viewModel.save()
+                } label: {
+                    Text("Save")
+                        .frame(maxWidth: .infinity)
                 }
-                .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.borderedProminent)
-            .disabled(!viewModel.isValidURL || viewModel.isSubmitting)
-            .keyboardShortcut(.return, modifiers: .command)
+                .buttonStyle(.bordered)
+                .disabled(!viewModel.isValidURL)
 
-            // Active downloads
-            if !viewModel.activeDownloads.isEmpty {
+                Button {
+                    viewModel.submit()
+                } label: {
+                    Text("Download")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(!viewModel.isValidURL)
+                .keyboardShortcut(.return, modifiers: .command)
+            }
+
+            // Fetching + active downloads
+            if !viewModel.fetchingTasks.isEmpty || !viewModel.activeDownloads.isEmpty {
                 Divider()
-                DownloadProgressView(downloads: Array(viewModel.activeDownloads.values))
+                DownloadProgressView(
+                    fetchingTasks: viewModel.fetchingTasks,
+                    downloads: Array(viewModel.activeDownloads.values)
+                )
             }
 
             Spacer()

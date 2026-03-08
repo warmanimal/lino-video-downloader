@@ -1,19 +1,55 @@
 import SwiftUI
 
 struct DownloadProgressView: View {
+    let fetchingTasks: [FetchingTask]
     let downloads: [DownloadTask]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Active Downloads")
+            Text("Downloads")
                 .font(.caption)
                 .fontWeight(.medium)
                 .foregroundStyle(.secondary)
+
+            ForEach(fetchingTasks) { task in
+                FetchingItemView(task: task)
+            }
 
             ForEach(downloads) { task in
                 DownloadItemView(task: task)
             }
         }
+    }
+}
+
+private struct FetchingItemView: View {
+    @Bindable var task: FetchingTask
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                PlatformBadgeView(platform: task.platform, size: 10)
+                Text(task.url)
+                    .font(.caption)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Spacer()
+            }
+
+            if let error = task.error {
+                Label(error, systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption2)
+                    .foregroundStyle(.red)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                ProgressView()
+                    .progressViewStyle(.linear)
+            }
+        }
+        .padding(8)
+        .background(Color(.controlBackgroundColor))
+        .cornerRadius(6)
     }
 }
 

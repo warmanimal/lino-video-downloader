@@ -21,6 +21,7 @@ enum DownloadError: LocalizedError {
 @MainActor
 final class DownloadService {
     private(set) var activeDownloads: [Int64: DownloadTask] = [:]
+    private(set) var fetchingTasks: [FetchingTask] = []
     private var runningProcesses: [Int64: Process] = [:]
     private var pendingQueue: [(url: String, videoId: Int64, tags: [String])] = []
     var maxConcurrent = Constants.maxConcurrentDownloads
@@ -42,10 +43,35 @@ final class DownloadService {
     var activeCount: Int { activeDownloads.count }
     var hasActiveDownloads: Bool { !activeDownloads.isEmpty }
 
-    func enqueueDownload(url: String, tags: [String]) async throws {
+    /// Immediately registers a fetching placeholder and kicks off metadata lookup + download
+    /// in the background. Returns instantly so the caller can submit more URLs right away.
+    func enqueueDownload(url: String, tags: [String]) {
+        let platform = PlatformDetector.detect(from: url)
+        let fetchingTask = FetchingTask(url: url, platform: platform)
+        fetchingTasks.append(fetchingTask)
+
+        Task {
+            do {
+                try await performEnqueue(url: url, tags: tags, platform: platform, fetchingTask: fetchingTask)
+            } catch {
+                fetchingTask.error = error.localizedDescription
+                // Auto-dismiss the error row after 5 s
+                try? await Task.sleep(for: .seconds(5))
+                fetchingTasks.removeAll { $0.id == fetchingTask.id }
+            }
+        }
+    }
+
+    private func performEnqueue(
+        url: String,
+        tags: [String],
+        platform: Video.Platform,
+        fetchingTask: FetchingTask
+    ) async throws {
         let metadata = try await metadataService.fetchMetadata(url: url)
 
-        let platform = PlatformDetector.detect(from: url)
+        fetchingTasks.removeAll { $0.id == fetchingTask.id }
+
         let fileName = "\(metadata.id).\(metadata.ext ?? "mp4")"
 
         var video = Video(
@@ -101,6 +127,84 @@ final class DownloadService {
         } else {
             pendingQueue.append((url: url, videoId: videoId, tags: tags))
         }
+    }
+
+    /// Fetches metadata and saves the record without starting a download.
+    func saveURL(url: String, tags: [String]) {
+        let platform = PlatformDetector.detect(from: url)
+        let fetchingTask = FetchingTask(url: url, platform: platform)
+        fetchingTasks.append(fetchingTask)
+
+        Task {
+            do {
+                try await performSave(url: url, tags: tags, platform: platform, fetchingTask: fetchingTask)
+            } catch {
+                fetchingTask.error = error.localizedDescription
+                try? await Task.sleep(for: .seconds(5))
+                fetchingTasks.removeAll { $0.id == fetchingTask.id }
+            }
+        }
+    }
+
+    private func performSave(
+        url: String,
+        tags: [String],
+        platform: Video.Platform,
+        fetchingTask: FetchingTask
+    ) async throws {
+        let metadata = try await metadataService.fetchMetadata(url: url)
+
+        fetchingTasks.removeAll { $0.id == fetchingTask.id }
+
+        let fileName = "\(metadata.id).\(metadata.ext ?? "mp4")"
+
+        var video = Video(
+            ytdlpId: metadata.id,
+            title: metadata.title ?? "Untitled",
+            description: metadata.description,
+            uploader: metadata.uploader,
+            uploaderUrl: metadata.uploaderUrl,
+            platform: platform,
+            originalUrl: url,
+            webpageUrl: metadata.webpageUrl,
+            uploadDate: metadata.uploadDate,
+            duration: metadata.duration,
+            filePath: fileName,
+            fileSize: metadata.effectiveFileSize,
+            thumbnailPath: nil,
+            width: metadata.width,
+            height: metadata.height,
+            addedAt: Date(),
+            status: .saved,
+            errorMessage: nil
+        )
+
+        try videoRepo.insert(&video)
+
+        guard let videoId = video.id else { return }
+
+        if !tags.isEmpty {
+            try videoRepo.setTags(videoId: videoId, tagNames: tags)
+        }
+
+        if let thumbnailUrl = metadata.thumbnail {
+            let thumbService = self.thumbnailService
+            let vRepo = self.videoRepo
+            let metaId = metadata.id
+            Task {
+                do {
+                    let thumbPath = try await thumbService.downloadThumbnail(
+                        from: thumbnailUrl,
+                        videoId: metaId
+                    )
+                    try vRepo.updateThumbnailPath(videoId: videoId, thumbnailPath: thumbPath)
+                } catch {
+                    print("Thumbnail download failed: \(error)")
+                }
+            }
+        }
+
+        changeToken += 1
     }
 
     func cancelDownload(videoId: Int64) {

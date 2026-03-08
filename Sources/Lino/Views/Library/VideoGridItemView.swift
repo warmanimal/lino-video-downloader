@@ -109,6 +109,10 @@ struct VideoGridItemView: View {
             Color.black.opacity(0.5)
 
             switch video.status {
+            case .saved:
+                Label("Saved", systemImage: "bookmark.fill")
+                    .font(.caption)
+                    .foregroundStyle(.white)
             case .pending:
                 Label("Queued", systemImage: "clock")
                     .font(.caption)

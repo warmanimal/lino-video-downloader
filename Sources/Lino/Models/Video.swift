@@ -24,6 +24,7 @@ struct Video: Codable, FetchableRecord, MutablePersistableRecord, Identifiable, 
     var deletedAt: Date?
 
     enum DownloadStatus: String, Codable, DatabaseValueConvertible, Sendable {
+        case saved       // metadata saved, file not downloaded
         case pending
         case downloading
         case completed

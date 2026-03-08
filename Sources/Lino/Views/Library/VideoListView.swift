@@ -117,6 +117,10 @@ struct VideoListRowView: View {
     @ViewBuilder
     private func statusBadge(for status: Video.DownloadStatus) -> some View {
         switch status {
+        case .saved:
+            Label("Saved", systemImage: "bookmark.fill")
+                .font(.caption2)
+                .foregroundStyle(.purple)
         case .completed:
             Label("Done", systemImage: "checkmark.circle.fill")
                 .font(.caption2)

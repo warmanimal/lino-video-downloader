@@ -28,7 +28,8 @@ struct VideoDetailView: View {
                 viewModel = VideoDetailViewModel(
                     videoInfo: videoInfo,
                     videoRepo: appState.videoRepo,
-                    downloadService: appState.downloadService
+                    downloadService: appState.downloadService,
+                    metadataService: appState.metadataService
                 )
             }
         }
@@ -36,7 +37,8 @@ struct VideoDetailView: View {
             viewModel = VideoDetailViewModel(
                 videoInfo: videoInfo,
                 videoRepo: appState.videoRepo,
-                downloadService: appState.downloadService
+                downloadService: appState.downloadService,
+                metadataService: appState.metadataService
             )
         }
     }
@@ -68,11 +70,15 @@ private struct VideoDetailContent: View {
                     VideoPlayerView(videoURL: video.absoluteFilePath)
                         .frame(height: 300)
                         .cornerRadius(8)
+                } else if video.status == .saved, !isTrashView, let streamURL = viewModel.streamURL {
+                    VideoPlayerView(videoURL: streamURL)
+                        .frame(height: 300)
+                        .cornerRadius(8)
                 } else {
-                    // Thumbnail or placeholder
-                    thumbnailView
+                    streamablePreview
                         .frame(height: 200)
                         .cornerRadius(8)
+                        .clipped()
                 }
 
                 // Title and uploader
@@ -216,6 +222,14 @@ private struct VideoDetailContent: View {
                 Label("Open URL", systemImage: "safari")
             }
 
+            if video.status == .saved {
+                Button {
+                    Task { await viewModel.downloadVideo() }
+                } label: {
+                    Label("Download", systemImage: "arrow.down.circle")
+                }
+            }
+
             if video.status == .completed {
                 Button {
                     viewModel.revealInFinder()
@@ -274,6 +288,53 @@ private struct VideoDetailContent: View {
         .padding(10)
         .background(Color.orange.opacity(0.1))
         .cornerRadius(8)
+    }
+
+    /// Thumbnail with a play-to-stream overlay for saved videos, plain thumbnail otherwise.
+    @ViewBuilder
+    private var streamablePreview: some View {
+        ZStack {
+            thumbnailView
+
+            if video.status == .saved, !isTrashView {
+                if viewModel.isLoadingStream {
+                    Color.black.opacity(0.35)
+                    ProgressView()
+                        .controlSize(.large)
+                        .tint(.white)
+                } else if let error = viewModel.streamError {
+                    Color.black.opacity(0.35)
+                    VStack(spacing: 8) {
+                        Image(systemName: "exclamationmark.circle.fill")
+                            .font(.title)
+                            .foregroundStyle(.red)
+                        Text(error)
+                            .font(.caption)
+                            .foregroundStyle(.white)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, 16)
+                        Button("Try Again") {
+                            Task {
+                                viewModel.streamError = nil
+                                await viewModel.loadStreamURL()
+                            }
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.small)
+                    }
+                } else {
+                    Button {
+                        Task { await viewModel.loadStreamURL() }
+                    } label: {
+                        Image(systemName: "play.circle.fill")
+                            .font(.system(size: 52))
+                            .foregroundStyle(.white)
+                            .shadow(color: .black.opacity(0.5), radius: 8, y: 2)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
     }
 
     @ViewBuilder
