@@ -19,7 +19,8 @@ let package = Package(
                 .product(name: "HotKey", package: "HotKey"),
             ],
             path: "Sources/Lino",
-            exclude: ["Resources/Info.plist"]
+            exclude: ["Resources/Info.plist"],
+            resources: [.copy("Resources/AppIcon.icns")]
         ),
         .testTarget(
             name: "LinoTests",

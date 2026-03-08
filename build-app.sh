@@ -39,6 +39,9 @@ cp "$BINARY" "$MACOS/$APP_NAME"
 # Copy Info.plist
 cp "Sources/Lino/Resources/Info.plist" "$CONTENTS/Info.plist"
 
+# Copy app icon
+cp "Sources/Lino/Resources/AppIcon.icns" "$RESOURCES/AppIcon.icns"
+
 # Download standalone yt-dlp binary from GitHub releases
 YTDLP_RESOURCE="$RESOURCES/yt-dlp"
 YTDLP_CACHE=".build/yt-dlp_macos"
