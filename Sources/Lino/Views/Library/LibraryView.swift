@@ -1,4 +1,7 @@
 import SwiftUI
+import os.log
+
+private let logger = Logger(subsystem: "com.lino.app", category: "LibraryView")
 
 struct LibraryView: View {
     @Environment(\.appState) private var appState
@@ -21,7 +24,8 @@ struct LibraryView: View {
                 viewModel = vm
             }
         }
-        .onChange(of: appState.downloadService.changeToken) { _, _ in
+        .onChange(of: appState.downloadService.changeToken) { old, new in
+            logger.notice("[LibraryView] changeToken \(old) -> \(new), reloading videos")
             viewModel?.loadVideos()
         }
     }
@@ -141,6 +145,7 @@ private struct LibraryContentView: View {
             .frame(minWidth: 400)
         } detail: {
             if let videoInfo = viewModel.selectedVideoInfo {
+                let _ = logger.notice("[LibraryView] showing detail for id=\(videoInfo.video.id ?? -1)")
                 VideoDetailView(
                     videoInfo: videoInfo,
                     isTrashView: viewModel.showingTrash,

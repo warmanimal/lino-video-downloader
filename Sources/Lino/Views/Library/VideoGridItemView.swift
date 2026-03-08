@@ -11,8 +11,7 @@ struct VideoGridItemView: View {
             // Thumbnail
             ZStack(alignment: .topLeading) {
                 thumbnailView
-                    .frame(height: 140)
-                    .clipped()
+                    .frame(maxWidth: .infinity, minHeight: 140)
 
                 // Platform badge
                 PlatformBadgeView(platform: video.platform, size: 14)
@@ -45,6 +44,8 @@ struct VideoGridItemView: View {
                     statusOverlay
                 }
             }
+            .frame(height: 140)
+            .clipped()
 
             // Info
             VStack(alignment: .leading, spacing: 3) {

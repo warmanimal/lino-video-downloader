@@ -1,4 +1,7 @@
 import Foundation
+import os.log
+
+private let logger = Logger(subsystem: "com.lino.app", category: "LibraryVM")
 
 @Observable
 @MainActor
@@ -31,6 +34,7 @@ final class LibraryViewModel {
     }
 
     func loadVideos() {
+        logger.notice("[LibraryVM] loadVideos() called, selectedVideoId=\(String(describing: self.selectedVideoId))")
         isLoading = true
         errorMessage = nil
         do {
@@ -41,8 +45,10 @@ final class LibraryViewModel {
                 sortBy: sortBy
             )
             trashedCount = try videoRepo.trashedCount()
+            logger.notice("[LibraryVM] loaded \(self.videos.count) videos, ids=\(self.videos.compactMap { $0.video.id })")
         } catch {
             errorMessage = error.localizedDescription
+            logger.notice("[LibraryVM] loadVideos error: \(error)")
         }
         isLoading = false
     }

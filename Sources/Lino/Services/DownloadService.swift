@@ -141,20 +141,18 @@ final class DownloadService {
                     }
                 }
 
-                // Remux to proper MP4 container if needed (e.g. MPEG-TS → MP4)
+                // Ensure the file is playable by AVPlayer (correct container + supported codec).
                 if let result {
                     let fileName = URL(fileURLWithPath: result).lastPathComponent
                     let fileURL = Constants.storageDir.appendingPathComponent(fileName)
 
-                    if !VideoRemuxer.isPlayableContainer(at: fileURL) {
-                        await MainActor.run {
-                            task.progress = DownloadProgress(percent: 100, phase: .remuxing)
-                        }
-                        do {
-                            _ = try await VideoRemuxer.remux(source: fileURL)
-                        } catch {
-                            print("Remux failed (video may not play): \(error)")
-                        }
+                    await MainActor.run {
+                        task.progress = DownloadProgress(percent: 100, phase: .remuxing)
+                    }
+                    do {
+                        try await VideoRemuxer.ensurePlayable(at: fileURL)
+                    } catch {
+                        print("Post-processing failed (video may not play): \(error)")
                     }
                 }
 
@@ -252,7 +250,7 @@ final class DownloadService {
                     "--progress-template",
                     "postprocess:{\"status\":\"postprocessing\"}",
                     "--print", "after_move:filepath",
-                    "-S", "ext:mp4:m4a",
+                    "-S", "vcodec:h264,ext:mp4:m4a",
                     "--merge-output-format", "mp4",
                     "-o", "%(id)s.%(ext)s",
                     "-P", Constants.storageDir.path,

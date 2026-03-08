@@ -65,16 +65,9 @@ private struct VideoDetailContent: View {
                 if video.status == .completed,
                    !isTrashView,
                    FileManager.default.fileExists(atPath: video.absoluteFilePath.path) {
-                    if viewModel.isRemuxing {
-                        remuxingPlaceholder
-                            .frame(height: 300)
-                            .cornerRadius(8)
-                    } else {
-                        VideoPlayerView(videoURL: video.absoluteFilePath)
-                            .id(viewModel.remuxToken)
-                            .frame(height: 300)
-                            .cornerRadius(8)
-                    }
+                    VideoPlayerView(videoURL: video.absoluteFilePath)
+                        .frame(height: 300)
+                        .cornerRadius(8)
                 } else {
                     // Thumbnail or placeholder
                     thumbnailView
@@ -281,19 +274,6 @@ private struct VideoDetailContent: View {
         .padding(10)
         .background(Color.orange.opacity(0.1))
         .cornerRadius(8)
-    }
-
-    private var remuxingPlaceholder: some View {
-        Rectangle()
-            .fill(Color(.controlBackgroundColor))
-            .overlay {
-                VStack(spacing: 8) {
-                    ProgressView()
-                    Text("Preparing video for playback\u{2026}")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
     }
 
     @ViewBuilder
