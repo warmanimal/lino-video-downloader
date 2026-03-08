@@ -35,7 +35,7 @@ enum VideoRemuxer {
     /// Replaces the original file in-place.
     @discardableResult
     static func remux(source: URL) async throws -> URL {
-        guard let ffmpeg = findFFmpeg() else {
+        guard let ffmpeg = Constants.ffmpegPath else {
             throw RemuxError.ffmpegNotFound
         }
 
@@ -94,56 +94,5 @@ enum VideoRemuxer {
         guard !isPlayableContainer(at: url) else { return false }
         try await remux(source: url)
         return true
-    }
-
-    // MARK: - ffmpeg discovery
-
-    /// Search well-known paths for a working ffmpeg binary.
-    private static func findFFmpeg() -> URL? {
-        let candidates = [
-            "/opt/homebrew/bin/ffmpeg",
-            "/usr/local/bin/ffmpeg",
-            "/opt/homebrew/Cellar/ffmpeg-full/8.0.1_3/bin/ffmpeg",
-        ]
-
-        // Also glob Homebrew Cellar for any ffmpeg version.
-        let cellarRoots = [
-            "/opt/homebrew/Cellar/ffmpeg",
-            "/opt/homebrew/Cellar/ffmpeg-full",
-            "/usr/local/Cellar/ffmpeg",
-            "/usr/local/Cellar/ffmpeg-full",
-        ]
-
-        var allCandidates = candidates
-        for root in cellarRoots {
-            if let versions = try? FileManager.default.contentsOfDirectory(atPath: root) {
-                for version in versions {
-                    allCandidates.append("\(root)/\(version)/bin/ffmpeg")
-                }
-            }
-        }
-
-        for path in allCandidates {
-            let url = URL(fileURLWithPath: path)
-            guard FileManager.default.isExecutableFile(atPath: path) else { continue }
-
-            // Quick smoke-test: can the binary even launch?
-            let probe = Process()
-            probe.executableURL = url
-            probe.arguments = ["-version"]
-            probe.standardOutput = FileHandle.nullDevice
-            probe.standardError = FileHandle.nullDevice
-            do {
-                try probe.run()
-                probe.waitUntilExit()
-                if probe.terminationStatus == 0 {
-                    return url
-                }
-            } catch {
-                continue
-            }
-        }
-
-        return nil
     }
 }

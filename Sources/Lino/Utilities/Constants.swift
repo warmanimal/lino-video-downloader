@@ -69,6 +69,51 @@ enum Constants {
         return env
     }
 
+    /// Resolves a working ffmpeg binary.
+    /// The default Homebrew `ffmpeg` may have broken dylib links, so we probe
+    /// Cellar versioned paths (including `ffmpeg-full`) and smoke-test each candidate.
+    static var ffmpegPath: URL? {
+        let candidates = [
+            "/opt/homebrew/bin/ffmpeg",
+            "/usr/local/bin/ffmpeg",
+        ]
+
+        let cellarRoots = [
+            "/opt/homebrew/Cellar/ffmpeg",
+            "/opt/homebrew/Cellar/ffmpeg-full",
+            "/usr/local/Cellar/ffmpeg",
+            "/usr/local/Cellar/ffmpeg-full",
+        ]
+
+        var allCandidates = candidates
+        for root in cellarRoots {
+            if let versions = try? FileManager.default.contentsOfDirectory(atPath: root) {
+                for version in versions {
+                    allCandidates.append("\(root)/\(version)/bin/ffmpeg")
+                }
+            }
+        }
+
+        for path in allCandidates {
+            guard FileManager.default.isExecutableFile(atPath: path) else { continue }
+            let probe = Process()
+            probe.executableURL = URL(fileURLWithPath: path)
+            probe.arguments = ["-version"]
+            probe.standardOutput = FileHandle.nullDevice
+            probe.standardError = FileHandle.nullDevice
+            do {
+                try probe.run()
+                probe.waitUntilExit()
+                if probe.terminationStatus == 0 {
+                    return URL(fileURLWithPath: path)
+                }
+            } catch {
+                continue
+            }
+        }
+        return nil
+    }
+
     static let maxConcurrentDownloads = 2
 
     static func ensureDirectoriesExist() throws {

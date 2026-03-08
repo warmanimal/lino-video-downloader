@@ -244,7 +244,7 @@ final class DownloadService {
                 let process = Process()
                 process.executableURL = ytdlpPath
                 process.environment = Constants.subprocessEnvironment
-                process.arguments = [
+                var args = [
                     "--newline",
                     "--progress",
                     "--progress-template",
@@ -252,13 +252,17 @@ final class DownloadService {
                     "--progress-template",
                     "postprocess:{\"status\":\"postprocessing\"}",
                     "--print", "after_move:filepath",
-                    // Prefer mp4/m4a containers so AVPlayer can play without ffmpeg remux
                     "-S", "ext:mp4:m4a",
                     "--merge-output-format", "mp4",
                     "-o", "%(id)s.%(ext)s",
                     "-P", Constants.storageDir.path,
-                    url
                 ]
+                // Point yt-dlp at a working ffmpeg so it can merge multi-stream downloads.
+                if let ffmpeg = Constants.ffmpegPath {
+                    args += ["--ffmpeg-location", ffmpeg.deletingLastPathComponent().path]
+                }
+                args.append(url)
+                process.arguments = args
 
                 let stdout = Pipe()
                 let stderr = Pipe()
