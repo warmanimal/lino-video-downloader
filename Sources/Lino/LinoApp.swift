@@ -27,7 +27,7 @@ struct LinoApp: App {
                 .environment(\.appState, appState)
                 .frame(width: 360, height: 420)
         } label: {
-            Label("Lino", systemImage: "film.stack")
+            Label("Lino", systemImage: "heart.fill")
         }
         .menuBarExtraStyle(.window)
 
