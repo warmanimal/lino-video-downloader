@@ -260,7 +260,20 @@ private struct MenuBarPopoverContent: View {
         }
     }
 
-    // MARK: - Destination picker (room first, then collection)
+    // MARK: - Destination picker (dropdown menu)
+
+    private var destinationLabel: String {
+        if let colId = viewModel.selectedCollectionId,
+           let col = viewModel.allCollections.first(where: { $0.id == colId }),
+           let room = viewModel.rooms.first(where: { $0.id == col.roomId }) {
+            return "\(room.name) › \(col.name)"
+        }
+        if let roomId = viewModel.selectedRoomId,
+           let room = viewModel.rooms.first(where: { $0.id == roomId }) {
+            return room.name
+        }
+        return "None"
+    }
 
     private var destinationSection: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -273,46 +286,57 @@ private struct MenuBarPopoverContent: View {
                     .foregroundStyle(.tertiary)
             }
 
-            // Room picker
             HStack {
-                Picker(selection: $viewModel.selectedRoomId) {
-                    Text("All Items").tag(Int64?.none)
-                    ForEach(viewModel.rooms) { room in
-                        if let id = room.id {
-                            Label(room.name, systemImage: "house")
-                                .tag(Optional(id))
-                        }
+                Menu {
+                    Button {
+                        viewModel.selectedRoomId = nil
+                        viewModel.selectedCollectionId = nil
+                    } label: {
+                        Label("None", systemImage: "tray")
                     }
-                } label: { EmptyView() }
-                .labelsHidden()
-                .pickerStyle(.menu)
-                .fixedSize()
-                .onChange(of: viewModel.selectedRoomId) { _, _ in
-                    viewModel.selectedCollectionId = nil
-                }
-                Spacer()
-            }
 
-            // Collection picker — only when a room is selected and has collections
-            if let roomId = viewModel.selectedRoomId {
-                let cols = viewModel.collections(for: roomId)
-                if !cols.isEmpty {
-                    HStack {
-                        Picker(selection: $viewModel.selectedCollectionId) {
-                            Text("No collection").tag(Int64?.none)
-                            ForEach(cols) { col in
-                                if let id = col.id {
-                                    Label(col.name, systemImage: "folder")
-                                        .tag(Optional(id))
+                    Divider()
+
+                    ForEach(viewModel.rooms) { room in
+                        if let roomId = room.id {
+                            let cols = viewModel.collections(for: roomId)
+                            if cols.isEmpty {
+                                Button {
+                                    viewModel.selectedRoomId = roomId
+                                    viewModel.selectedCollectionId = nil
+                                } label: {
+                                    Label(room.name, systemImage: "house")
+                                }
+                            } else {
+                                Menu {
+                                    Button {
+                                        viewModel.selectedRoomId = roomId
+                                        viewModel.selectedCollectionId = nil
+                                    } label: {
+                                        Label("Just \(room.name)", systemImage: "house")
+                                    }
+                                    Divider()
+                                    ForEach(cols) { col in
+                                        if let colId = col.id {
+                                            Button {
+                                                viewModel.selectedRoomId = roomId
+                                                viewModel.selectedCollectionId = colId
+                                            } label: {
+                                                Label(col.name, systemImage: "folder")
+                                            }
+                                        }
+                                    }
+                                } label: {
+                                    Label(room.name, systemImage: "house")
                                 }
                             }
-                        } label: { EmptyView() }
-                        .labelsHidden()
-                        .pickerStyle(.menu)
-                        .fixedSize()
-                        Spacer()
+                        }
                     }
+                } label: {
+                    Text(destinationLabel)
                 }
+                .fixedSize()
+                Spacer()
             }
         }
     }
@@ -321,14 +345,25 @@ private struct MenuBarPopoverContent: View {
 
     private var submitButtons: some View {
         HStack(spacing: 8) {
-            Button {
-                viewModel.save()
-            } label: {
-                Text("Save")
-                    .frame(maxWidth: .infinity)
+            if viewModel.detectedPlatform == .twitter {
+                Button { viewModel.saveTextOnly() } label: {
+                    Text("Save as Text").frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .disabled(!viewModel.isValidURL)
+            } else if viewModel.detectedPlatform == .other {
+                Button { viewModel.saveArticle() } label: {
+                    Text("Save as Article").frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .disabled(!viewModel.isValidURL)
+            } else {
+                Button { viewModel.save() } label: {
+                    Text("Save").frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .disabled(!viewModel.isValidURL)
             }
-            .buttonStyle(.bordered)
-            .disabled(!viewModel.isValidURL)
 
             Button {
                 viewModel.submit()

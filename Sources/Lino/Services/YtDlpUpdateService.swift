@@ -26,6 +26,8 @@ final class YtDlpUpdateService {
             return
         }
 
+        installBundledPlugins()
+
         let managedPath = Constants.ytdlpManagedPath
 
         // Check if we already have a standalone binary in app support
@@ -139,6 +141,24 @@ final class YtDlpUpdateService {
 
         currentVersion = await Self.fetchInstalledVersion()
         lastError = nil
+    }
+
+    /// Copies bundled yt-dlp extractor plugins from the app bundle to the yt-dlp plugin directory.
+    /// Overwrites on every launch so the installed plugin always matches the bundled version.
+    private func installBundledPlugins() {
+        // Bundle.module.bundleURL points to Lino_Lino.bundle; Plugins is at its root.
+        let pluginsDir = Bundle.module.bundleURL.appendingPathComponent("Plugins")
+        let fm = FileManager.default
+        guard let plugins = try? fm.contentsOfDirectory(
+            at: pluginsDir, includingPropertiesForKeys: nil
+        ) else { return }
+
+        let destination = Constants.ytdlpPluginDir
+        for plugin in plugins where plugin.pathExtension == "py" {
+            let dest = destination.appendingPathComponent(plugin.lastPathComponent)
+            try? fm.removeItem(at: dest)
+            try? fm.copyItem(at: plugin, to: dest)
+        }
     }
 
     /// Runs yt-dlp --version on a background thread to avoid blocking the main thread.

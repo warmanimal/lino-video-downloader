@@ -34,6 +34,7 @@ final class DownloadService {
     private let metadataService: MetadataService
     private let thumbnailService: ThumbnailService
     private let tweetTextService: TweetTextService
+    private let articleMetadataService: ArticleMetadataService = ArticleMetadataService()
     private let roomRepo: RoomRepository
 
     init(
@@ -91,6 +92,12 @@ final class DownloadService {
         platform: Video.Platform,
         fetchingTask: FetchingTask
     ) async throws {
+        // PDF URLs skip yt-dlp entirely and are downloaded directly.
+        if PlatformDetector.isPDFURL(url) {
+            await downloadPDF(url: url, tags: tags, notes: notes, roomId: roomId, collectionId: collectionId, fetchingTask: fetchingTask)
+            return
+        }
+
         let metadata: YtDlpMetadata
         do {
             metadata = try await metadataService.fetchMetadata(url: url)
@@ -170,6 +177,134 @@ final class DownloadService {
             await startDownload(url: url, videoId: videoId, platform: platform)
         } else {
             pendingQueue.append((url: url, videoId: videoId, tags: tags))
+        }
+    }
+
+    /// Saves a web article as a bookmark using Open Graph metadata.
+    func saveAsArticle(url: String, tags: [String], notes: String? = nil, roomId: Int64? = nil, collectionId: Int64? = nil) {
+        let fetchingTask = FetchingTask(url: url, platform: .other)
+        fetchingTasks.append(fetchingTask)
+        Task { await downloadArticleMetadata(url: url, tags: tags, notes: notes, roomId: roomId, collectionId: collectionId, fetchingTask: fetchingTask) }
+    }
+
+    private func downloadArticleMetadata(
+        url: String, tags: [String], notes: String?,
+        roomId: Int64?, collectionId: Int64?,
+        fetchingTask: FetchingTask
+    ) async {
+        fetchingTasks.removeAll { $0.id == fetchingTask.id }
+
+        let info = await articleMetadataService.fetchMetadata(url: url)
+        let urlId = String(abs(url.hashValue), radix: 16)
+
+        var video = Video(
+            ytdlpId: urlId,
+            title: info.title,
+            description: info.description,
+            uploader: info.siteName,
+            uploaderUrl: nil,
+            platform: .other,
+            originalUrl: url,
+            webpageUrl: url,
+            uploadDate: nil,
+            duration: nil,
+            filePath: "",   // isTextOnly
+            fileSize: nil,
+            thumbnailPath: nil,
+            width: nil,
+            height: nil,
+            addedAt: Date(),
+            status: .completed,
+            errorMessage: nil,
+            notes: notes
+        )
+
+        guard (try? videoRepo.insert(&video)) != nil, let videoId = video.id else { return }
+        if !tags.isEmpty { try? videoRepo.setTags(videoId: videoId, tagNames: tags) }
+        assignToRoomOrCollection(videoId: videoId, roomId: roomId, collectionId: collectionId)
+
+        if let thumbStr = info.thumbnailURL {
+            let thumbSvc = thumbnailService
+            let vRepo = videoRepo
+            Task {
+                if let path = try? await thumbSvc.downloadThumbnail(from: thumbStr, videoId: urlId) {
+                    try? vRepo.updateThumbnailPath(videoId: videoId, thumbnailPath: path)
+                }
+            }
+        }
+
+        changeToken += 1
+    }
+
+    /// On-demand text-only save for Twitter/X URLs.
+    func saveAsText(url: String, tags: [String], notes: String? = nil, roomId: Int64? = nil, collectionId: Int64? = nil) {
+        let fetchingTask = FetchingTask(url: url, platform: .twitter)
+        fetchingTasks.append(fetchingTask)
+        Task { await saveTextTweet(url: url, tags: tags, notes: notes, roomId: roomId, collectionId: collectionId, fetchingTask: fetchingTask) }
+    }
+
+    /// Downloads a PDF from a direct URL and saves it as a completed library entry.
+    private func downloadPDF(
+        url: String,
+        tags: [String],
+        notes: String?,
+        roomId: Int64?,
+        collectionId: Int64?,
+        fetchingTask: FetchingTask
+    ) async {
+        fetchingTasks.removeAll { $0.id == fetchingTask.id }
+
+        guard let urlObj = URL(string: url) else { return }
+
+        // Use a stable ID derived from the URL so re-adding the same PDF doesn't duplicate.
+        let urlHash = String(abs(url.hashValue), radix: 16)
+        let originalFilename = urlObj.lastPathComponent.isEmpty ? "document.pdf" : urlObj.lastPathComponent
+        let filename = "\(urlHash)_\(originalFilename)"
+        let destURL = Constants.storageDir.appendingPathComponent(filename)
+        let title = (urlObj.deletingPathExtension().lastPathComponent)
+            .replacingOccurrences(of: "_", with: " ")
+            .replacingOccurrences(of: "-", with: " ")
+
+        do {
+            let (tempURL, _) = try await URLSession.shared.download(from: urlObj)
+
+            let fm = FileManager.default
+            try fm.createDirectory(at: Constants.storageDir, withIntermediateDirectories: true)
+            if fm.fileExists(atPath: destURL.path) { try fm.removeItem(at: destURL) }
+            try fm.moveItem(at: tempURL, to: destURL)
+
+            let fileSize = (try? destURL.resourceValues(forKeys: [.fileSizeKey]).fileSize).map { Int64($0) } ?? nil
+
+            var video = Video(
+                ytdlpId: urlHash,
+                title: title.isEmpty ? "Document" : title,
+                description: nil,
+                uploader: urlObj.host,
+                uploaderUrl: nil,
+                platform: .other,
+                originalUrl: url,
+                webpageUrl: url,
+                uploadDate: nil,
+                duration: nil,
+                filePath: filename,
+                fileSize: fileSize,
+                thumbnailPath: nil,
+                width: nil,
+                height: nil,
+                addedAt: Date(),
+                status: .completed,
+                errorMessage: nil,
+                notes: notes
+            )
+
+            try videoRepo.insert(&video)
+            guard let videoId = video.id else { return }
+
+            if !tags.isEmpty { try? videoRepo.setTags(videoId: videoId, tagNames: tags) }
+            assignToRoomOrCollection(videoId: videoId, roomId: roomId, collectionId: collectionId)
+            changeToken += 1
+        } catch {
+            print("[DownloadService] PDF download failed: \(error)")
         }
     }
 

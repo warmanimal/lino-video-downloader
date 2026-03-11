@@ -13,8 +13,8 @@ struct VideoGridItemView: View {
                 thumbnailView
                     .frame(maxWidth: .infinity, minHeight: 140)
 
-                // Platform badge (top-left) — hidden for local PDFs/images
-                if !video.isPDF && !video.isImage {
+                // Platform badge (top-left) — hidden for local PDFs/images/text-only
+                if !video.isPDF && !video.isImage && !video.isTextOnly {
                     PlatformBadgeView(platform: video.platform, size: 14)
                         .padding(6)
                         .background(.ultraThinMaterial)

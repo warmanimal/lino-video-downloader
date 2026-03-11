@@ -175,7 +175,62 @@ private struct VideoDetailContent: View {
                     }
                 }
 
-                if let notes = video.notes, !notes.isEmpty {
+                // Notes — always shown, editable
+                if !isTrashView {
+                    Divider()
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack {
+                            Text("Notes")
+                                .font(.subheadline)
+                                .fontWeight(.medium)
+                            Spacer()
+                            Button(viewModel.isEditingNotes ? "Save" : "Edit") {
+                                if viewModel.isEditingNotes {
+                                    viewModel.saveNotes()
+                                } else {
+                                    viewModel.editableNotes = viewModel.videoInfo.video.notes ?? ""
+                                    viewModel.isEditingNotes = true
+                                }
+                            }
+                            .font(.caption)
+                            .buttonStyle(.link)
+                        }
+
+                        if viewModel.isEditingNotes {
+                            ZStack(alignment: .topLeading) {
+                                TextEditor(text: $viewModel.editableNotes)
+                                    .font(.body)
+                                    .frame(minHeight: 80, maxHeight: 200)
+                                    .scrollContentBackground(.hidden)
+                                    .padding(4)
+
+                                if viewModel.editableNotes.isEmpty {
+                                    Text("Add a note…")
+                                        .font(.body)
+                                        .foregroundStyle(.tertiary)
+                                        .allowsHitTesting(false)
+                                        .padding(.horizontal, 8)
+                                        .padding(.vertical, 12)
+                                }
+                            }
+                            .background(Color(.textBackgroundColor))
+                            .cornerRadius(6)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 6)
+                                    .strokeBorder(Color.accentColor.opacity(0.5), lineWidth: 1)
+                            )
+                        } else if let notes = video.notes, !notes.isEmpty {
+                            Text(notes)
+                                .font(.body)
+                                .foregroundStyle(.primary)
+                                .textSelection(.enabled)
+                        } else {
+                            Text("No notes")
+                                .font(.body)
+                                .foregroundStyle(.tertiary)
+                        }
+                    }
+                } else if let notes = video.notes, !notes.isEmpty {
                     Divider()
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Notes")
@@ -259,7 +314,7 @@ private struct VideoDetailContent: View {
         ZStack {
             // Main content
             if video.isTextOnly {
-                tweetCard
+                if video.platform == .twitter { tweetCard } else { articleCard }
             } else if video.isImage {
                 fullImageView(maxHeight: panelHeight * 0.85)
             } else if video.isPDF && video.status == .completed {
@@ -483,6 +538,66 @@ private struct VideoDetailContent: View {
                         .foregroundStyle(.secondary)
                 }
         }
+    }
+
+    /// Card shown for saved web articles (Open Graph bookmark, no local file).
+    @ViewBuilder
+    private var articleCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            // Site name + open button
+            HStack(alignment: .center, spacing: 6) {
+                Image(systemName: "doc.text")
+                    .foregroundStyle(.secondary)
+                Text(video.uploader ?? (URL(string: video.originalUrl)?.host ?? "Article"))
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Button {
+                    viewModel.openOriginalURL()
+                } label: {
+                    Label("Open Article", systemImage: "safari")
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+            }
+
+            Divider()
+
+            // og:image thumbnail
+            if let thumbPath = video.absoluteThumbnailPath,
+               let img = NSImage(contentsOf: thumbPath) {
+                Image(nsImage: img)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+                    .frame(maxWidth: .infinity, maxHeight: 180)
+                    .clipped()
+                    .cornerRadius(8)
+            }
+
+            // Title
+            Text(video.title)
+                .font(.headline)
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+
+            // Description
+            if let desc = video.description, !desc.isEmpty {
+                Text(desc)
+                    .font(.body)
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+                    .lineLimit(6)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color(.controlBackgroundColor))
+        .cornerRadius(12)
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .strokeBorder(Color.primary.opacity(0.1), lineWidth: 1)
+        )
     }
 
     /// Styled card shown for text-only tweets (no downloadable media).

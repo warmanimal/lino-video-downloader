@@ -27,7 +27,26 @@ extension NSItemProvider {
             if let result { return result }
         }
 
-        // 2. Photos / pasteboard images — ask system to export to a temp file.
+        // 2. PDF files — use loadFileRepresentation as a robust fallback.
+        //    macOS 14/15 sometimes exposes PDFs under com.adobe.pdf rather than fileURL,
+        //    and loadItem may return an unexpected object type for PDF providers.
+        if hasItemConformingToTypeIdentifier(UTType.pdf.identifier) {
+            let result: URL? = await withCheckedContinuation { cont in
+                loadFileRepresentation(forTypeIdentifier: UTType.pdf.identifier) { tempURL, _ in
+                    guard let tempURL else { cont.resume(returning: nil); return }
+                    let copyURL = FileManager.default.temporaryDirectory
+                        .appendingPathComponent(UUID().uuidString + ".pdf")
+                    if (try? FileManager.default.copyItem(at: tempURL, to: copyURL)) != nil {
+                        cont.resume(returning: copyURL)
+                    } else {
+                        cont.resume(returning: nil)
+                    }
+                }
+            }
+            if let result { return result }
+        }
+
+        // 3. Photos / pasteboard images — ask system to export to a temp file.
         //    We must copy the file before the closure returns (it gets cleaned up after).
         let imageUTIs = [
             UTType.jpeg.identifier,

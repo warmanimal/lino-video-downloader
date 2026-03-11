@@ -145,6 +145,42 @@ final class MenuBarViewModel {
         clearForm()
     }
 
+    func saveArticle() {
+        let trimmed = urlText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard PlatformDetector.isValidURL(trimmed) else {
+            errorMessage = "Please enter a valid URL."
+            return
+        }
+        errorMessage = nil
+        let notesTrimmed = notes.trimmingCharacters(in: .whitespacesAndNewlines)
+        downloadService.saveAsArticle(
+            url: trimmed,
+            tags: tags,
+            notes: notesTrimmed.isEmpty ? nil : notesTrimmed,
+            roomId: destination?.roomId,
+            collectionId: destination?.collectionId
+        )
+        clearForm()
+    }
+
+    func saveTextOnly() {
+        let trimmed = urlText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard PlatformDetector.isValidURL(trimmed) else {
+            errorMessage = "Please enter a valid URL."
+            return
+        }
+        errorMessage = nil
+        let notesTrimmed = notes.trimmingCharacters(in: .whitespacesAndNewlines)
+        downloadService.saveAsText(
+            url: trimmed,
+            tags: tags,
+            notes: notesTrimmed.isEmpty ? nil : notesTrimmed,
+            roomId: destination?.roomId,
+            collectionId: destination?.collectionId
+        )
+        clearForm()
+    }
+
     // MARK: Update existing item (duplicate path)
 
     func updateExisting() {

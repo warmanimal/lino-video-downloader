@@ -15,6 +15,10 @@ final class VideoDetailViewModel {
     var editableTags: [String]
     var isEditingTags = false
 
+    // Notes editing state
+    var editableNotes: String = ""
+    var isEditingNotes = false
+
     // Streaming state for saved (not-yet-downloaded) videos
     var streamURL: URL?
     var isLoadingStream = false
@@ -30,6 +34,20 @@ final class VideoDetailViewModel {
         self.downloadService = downloadService
         self.metadataService = metadataService
         self.editableTags = videoInfo.tags.map(\.name)
+        self.editableNotes = videoInfo.video.notes ?? ""
+    }
+
+    func saveNotes() {
+        guard let videoId = videoInfo.video.id else { return }
+        let trimmed = editableNotes.trimmingCharacters(in: .whitespacesAndNewlines)
+        let newNotes: String? = trimmed.isEmpty ? nil : trimmed
+        try? videoRepo.updateNotes(videoId: videoId, notes: newNotes)
+        if let updated = try? videoRepo.fetchOne(id: videoId) {
+            videoInfo = updated
+            editableNotes = videoInfo.video.notes ?? ""
+        }
+        isEditingNotes = false
+        onVideoUpdated?()
     }
 
     func saveTags() {

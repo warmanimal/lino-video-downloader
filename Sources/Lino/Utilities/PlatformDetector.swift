@@ -31,4 +31,9 @@ enum PlatformDetector {
         guard let scheme = url.scheme else { return false }
         return scheme == "http" || scheme == "https"
     }
+
+    static func isPDFURL(_ string: String) -> Bool {
+        guard let url = URL(string: string) else { return false }
+        return url.pathExtension.lowercased() == "pdf"
+    }
 }
