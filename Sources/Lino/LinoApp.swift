@@ -25,7 +25,7 @@ struct LinoApp: App {
         MenuBarExtra {
             MenuBarPopoverView()
                 .environment(\.appState, appState)
-                .frame(width: 360, height: 420)
+                .frame(width: 360, height: 500)
         } label: {
             Label("Lino", systemImage: "heart.fill")
         }
@@ -44,9 +44,11 @@ final class AppState {
     let database: AppDatabase
     let videoRepo: VideoRepository
     let tagRepo: TagRepository
+    let roomRepo: RoomRepository
     let metadataService: MetadataService
     let thumbnailService: ThumbnailService
     let downloadService: DownloadService
+    let fileImportService: FileImportService
     let ytdlpUpdateService: YtDlpUpdateService
     let hotkeyService: HotkeyService
 
@@ -61,13 +63,16 @@ final class AppState {
         self.database = db
         self.videoRepo = VideoRepository(db: db)
         self.tagRepo = TagRepository(db: db)
+        self.roomRepo = RoomRepository(db: db)
         self.metadataService = MetadataService()
         self.thumbnailService = ThumbnailService()
         self.downloadService = DownloadService(
             videoRepo: VideoRepository(db: db),
             metadataService: MetadataService(),
-            thumbnailService: ThumbnailService()
+            thumbnailService: ThumbnailService(),
+            roomRepo: RoomRepository(db: db)
         )
+        self.fileImportService = FileImportService(videoRepo: VideoRepository(db: db))
         self.ytdlpUpdateService = YtDlpUpdateService()
         self.hotkeyService = HotkeyService()
 

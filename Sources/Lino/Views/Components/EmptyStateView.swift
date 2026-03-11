@@ -2,7 +2,7 @@ import SwiftUI
 
 struct EmptyStateView: View {
     var title: String = "No Videos Yet"
-    var subtitle: String = "Press Cmd+Shift+L or click the menu bar icon to add your first video."
+    var subtitle: String = "Paste a URL in the menu bar, or drag and drop video files here."
     var systemImage: String = "film.stack"
 
     var body: some View {

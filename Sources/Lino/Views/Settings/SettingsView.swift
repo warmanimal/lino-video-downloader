@@ -143,7 +143,7 @@ private struct YtDlpSettingsView: View {
             }
 
             Section("About yt-dlp") {
-                Text("yt-dlp is the engine that downloads videos from YouTube, TikTok, Instagram, X, Pinterest, and many other sites. Keeping it updated ensures compatibility with the latest site changes.")
+                Text("yt-dlp is the engine that downloads videos from YouTube, TikTok, Instagram, X, Pinterest, Suno, and many other sites. Keeping it updated ensures compatibility with the latest site changes.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

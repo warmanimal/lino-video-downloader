@@ -64,6 +64,18 @@ struct VideoRepository: Sendable {
         }
     }
 
+    /// Returns the first non-deleted video whose `originalUrl` exactly matches, or nil.
+    func findByOriginalURL(_ url: String) throws -> VideoInfo? {
+        try db.dbQueue.read { db in
+            try Video
+                .filter(Column("originalUrl") == url)
+                .filter(Column("deletedAt") == nil)
+                .including(all: Video.tagsThroughVideoTags)
+                .asRequest(of: VideoInfo.self)
+                .fetchOne(db)
+        }
+    }
+
     // MARK: - Write
 
     func insert(_ video: inout Video) throws {
@@ -86,6 +98,43 @@ struct VideoRepository: Sendable {
             try db.execute(
                 sql: "UPDATE video SET filePath = ?, fileSize = ? WHERE id = ?",
                 arguments: [filePath, fileSize, videoId]
+            )
+        }
+    }
+
+    /// Updates all file-related fields at once — used when manually attaching a local file.
+    func updateMedia(
+        videoId: Int64,
+        filePath: String,
+        fileSize: Int64?,
+        width: Int?,
+        height: Int?,
+        thumbnailPath: String?
+    ) throws {
+        try db.dbQueue.write { db in
+            try db.execute(
+                sql: """
+                    UPDATE video
+                    SET filePath = ?, fileSize = ?, width = ?, height = ?,
+                        status = 'completed', errorMessage = NULL
+                    WHERE id = ?
+                    """,
+                arguments: [filePath, fileSize, width, height, videoId]
+            )
+            if let thumbnailPath {
+                try db.execute(
+                    sql: "UPDATE video SET thumbnailPath = ? WHERE id = ?",
+                    arguments: [thumbnailPath, videoId]
+                )
+            }
+        }
+    }
+
+    func updateNotes(videoId: Int64, notes: String?) throws {
+        try db.dbQueue.write { db in
+            try db.execute(
+                sql: "UPDATE video SET notes = ? WHERE id = ?",
+                arguments: [notes, videoId]
             )
         }
     }

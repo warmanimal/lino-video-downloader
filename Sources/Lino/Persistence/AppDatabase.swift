@@ -66,6 +66,70 @@ final class AppDatabase: Sendable {
             try db.create(index: "video_on_deletedAt", on: "video", columns: ["deletedAt"])
         }
 
+        migrator.registerMigration("v3") { db in
+            try db.create(table: "room") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("name", .text).notNull()
+                t.column("sortOrder", .integer).notNull().defaults(to: 0)
+            }
+
+            try db.create(table: "collection") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("roomId", .integer).notNull()
+                    .references("room", onDelete: .cascade)
+                t.column("name", .text).notNull()
+                t.column("sortOrder", .integer).notNull().defaults(to: 0)
+            }
+
+            try db.create(index: "collection_on_roomId", on: "collection", columns: ["roomId"])
+
+            try db.create(table: "collectionItem") { t in
+                t.column("collectionId", .integer).notNull()
+                    .references("collection", onDelete: .cascade)
+                t.column("videoId", .integer).notNull()
+                    .references("video", onDelete: .cascade)
+                t.column("sortOrder", .integer).notNull().defaults(to: 0)
+                t.primaryKey(["collectionId", "videoId"])
+            }
+
+            try db.create(index: "collectionItem_on_videoId", on: "collectionItem", columns: ["videoId"])
+        }
+
+        migrator.registerMigration("v4") { db in
+            try db.create(table: "roomItem") { t in
+                t.column("roomId", .integer).notNull()
+                    .references("room", onDelete: .cascade)
+                t.column("videoId", .integer).notNull()
+                    .references("video", onDelete: .cascade)
+                t.column("sortOrder", .integer).notNull().defaults(to: 0)
+                t.primaryKey(["roomId", "videoId"])
+            }
+            try db.create(index: "roomItem_on_videoId", on: "roomItem", columns: ["videoId"])
+        }
+
+        migrator.registerMigration("v5") { db in
+            try db.create(table: "roomShortcut") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("roomId", .integer).notNull()
+                    .references("room", onDelete: .cascade)
+                t.column("title", .text).notNull()
+                t.column("url", .text).notNull()
+                t.column("notes", .text)
+                t.column("iconData", .blob)
+                t.column("customSymbol", .text)
+                t.column("symbolColor", .text)
+                t.column("sortOrder", .integer).notNull().defaults(to: 0)
+            }
+            try db.create(index: "roomShortcut_on_roomId", on: "roomShortcut", columns: ["roomId"])
+        }
+
+        migrator.registerMigration("v6") { db in
+            // User-authored notes attached to any library item
+            try db.alter(table: "video") { t in
+                t.add(column: "notes", .text)
+            }
+        }
+
         return migrator
     }
 }

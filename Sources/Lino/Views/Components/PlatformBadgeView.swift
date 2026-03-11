@@ -17,6 +17,7 @@ struct PlatformBadgeView: View {
         case .instagram: return .purple
         case .twitter: return .blue
         case .pinterest: return .red
+        case .suno: return .mint
         case .other: return .secondary
         }
     }

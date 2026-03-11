@@ -13,14 +13,32 @@ struct VideoGridItemView: View {
                 thumbnailView
                     .frame(maxWidth: .infinity, minHeight: 140)
 
-                // Platform badge
-                PlatformBadgeView(platform: video.platform, size: 14)
-                    .padding(6)
-                    .background(.ultraThinMaterial)
-                    .cornerRadius(4)
-                    .padding(6)
+                // Platform badge (top-left) — hidden for local PDFs/images
+                if !video.isPDF && !video.isImage {
+                    PlatformBadgeView(platform: video.platform, size: 14)
+                        .padding(6)
+                        .background(.ultraThinMaterial)
+                        .cornerRadius(4)
+                        .padding(6)
+                }
 
-                // Duration badge
+                // PDF badge (top-right)
+                if video.isPDF {
+                    HStack {
+                        Spacer()
+                        Text("PDF")
+                            .font(.caption2)
+                            .fontWeight(.bold)
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 2)
+                            .background(Color.red.opacity(0.85))
+                            .cornerRadius(3)
+                            .padding(6)
+                    }
+                }
+
+                // Duration badge (bottom-right) — videos only
                 if video.duration != nil {
                     VStack {
                         Spacer()
@@ -87,16 +105,28 @@ struct VideoGridItemView: View {
 
     @ViewBuilder
     private var thumbnailView: some View {
-        if let thumbPath = video.absoluteThumbnailPath,
-           let image = NSImage(contentsOf: thumbPath) {
+        if video.isTextOnly {
+            // Text-only tweet: show a snippet of the tweet body
+            Rectangle()
+                .fill(Color(.controlBackgroundColor))
+                .overlay(alignment: .topLeading) {
+                    Text(video.description ?? video.title)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(6)
+                        .padding(8)
+                }
+        } else if let thumbPath = video.absoluteThumbnailPath,
+                  let image = NSImage(contentsOf: thumbPath) {
             Image(nsImage: image)
                 .resizable()
                 .aspectRatio(contentMode: .fill)
         } else {
+            let icon = video.isPDF ? "doc.richtext" : (video.isImage ? "photo" : "film")
             Rectangle()
                 .fill(Color(.separatorColor))
                 .overlay {
-                    Image(systemName: "film")
+                    Image(systemName: icon)
                         .font(.title)
                         .foregroundStyle(.secondary)
                 }

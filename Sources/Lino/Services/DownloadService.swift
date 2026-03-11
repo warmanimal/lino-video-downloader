@@ -33,11 +33,21 @@ final class DownloadService {
     private let videoRepo: VideoRepository
     private let metadataService: MetadataService
     private let thumbnailService: ThumbnailService
+    private let tweetTextService: TweetTextService
+    private let roomRepo: RoomRepository
 
-    init(videoRepo: VideoRepository, metadataService: MetadataService, thumbnailService: ThumbnailService) {
+    init(
+        videoRepo: VideoRepository,
+        metadataService: MetadataService,
+        thumbnailService: ThumbnailService,
+        tweetTextService: TweetTextService = TweetTextService(),
+        roomRepo: RoomRepository
+    ) {
         self.videoRepo = videoRepo
         self.metadataService = metadataService
         self.thumbnailService = thumbnailService
+        self.tweetTextService = tweetTextService
+        self.roomRepo = roomRepo
     }
 
     var activeCount: Int { activeDownloads.count }
@@ -45,14 +55,24 @@ final class DownloadService {
 
     /// Immediately registers a fetching placeholder and kicks off metadata lookup + download
     /// in the background. Returns instantly so the caller can submit more URLs right away.
-    func enqueueDownload(url: String, tags: [String]) {
+    func enqueueDownload(
+        url: String,
+        tags: [String],
+        notes: String? = nil,
+        roomId: Int64? = nil,
+        collectionId: Int64? = nil
+    ) {
         let platform = PlatformDetector.detect(from: url)
         let fetchingTask = FetchingTask(url: url, platform: platform)
         fetchingTasks.append(fetchingTask)
 
         Task {
             do {
-                try await performEnqueue(url: url, tags: tags, platform: platform, fetchingTask: fetchingTask)
+                try await performEnqueue(
+                    url: url, tags: tags, notes: notes,
+                    roomId: roomId, collectionId: collectionId,
+                    platform: platform, fetchingTask: fetchingTask
+                )
             } catch {
                 fetchingTask.error = error.localizedDescription
                 // Auto-dismiss the error row after 5 s
@@ -65,10 +85,31 @@ final class DownloadService {
     private func performEnqueue(
         url: String,
         tags: [String],
+        notes: String?,
+        roomId: Int64?,
+        collectionId: Int64?,
         platform: Video.Platform,
         fetchingTask: FetchingTask
     ) async throws {
-        let metadata = try await metadataService.fetchMetadata(url: url)
+        let metadata: YtDlpMetadata
+        do {
+            metadata = try await metadataService.fetchMetadata(url: url)
+        } catch {
+            // For Twitter/X, a "no video formats" failure means a text-only post.
+            // Save it as a completed text-only entry instead of surfacing an error.
+            let msg = error.localizedDescription.lowercased()
+            let isNoMedia = msg.contains("no video") || msg.contains("no downloadable")
+                || msg.contains("no media") || msg.contains("unsupported url")
+            if platform == .twitter && isNoMedia {
+                await saveTextTweet(
+                    url: url, tags: tags, notes: notes,
+                    roomId: roomId, collectionId: collectionId,
+                    fetchingTask: fetchingTask
+                )
+                return
+            }
+            throw error
+        }
 
         fetchingTasks.removeAll { $0.id == fetchingTask.id }
 
@@ -92,7 +133,8 @@ final class DownloadService {
             height: metadata.height,
             addedAt: Date(),
             status: .pending,
-            errorMessage: nil
+            errorMessage: nil,
+            notes: notes
         )
 
         try videoRepo.insert(&video)
@@ -102,6 +144,8 @@ final class DownloadService {
         if !tags.isEmpty {
             try videoRepo.setTags(videoId: videoId, tagNames: tags)
         }
+
+        assignToRoomOrCollection(videoId: videoId, roomId: roomId, collectionId: collectionId)
 
         if let thumbnailUrl = metadata.thumbnail {
             let thumbService = self.thumbnailService
@@ -129,15 +173,81 @@ final class DownloadService {
         }
     }
 
+    /// Saves a text-only tweet (no downloadable media) as a completed library entry.
+    private func saveTextTweet(
+        url: String,
+        tags: [String],
+        notes: String?,
+        roomId: Int64?,
+        collectionId: Int64?,
+        fetchingTask: FetchingTask
+    ) async {
+        fetchingTasks.removeAll { $0.id == fetchingTask.id }
+
+        let tweetSvc = tweetTextService
+        let info = await tweetSvc.fetchTweet(url: url)
+
+        // Truncate tweet text to ~120 chars for the title field
+        let title: String
+        if info.text.isEmpty || info.text == "Tweet" {
+            title = "Tweet"
+        } else {
+            title = info.text.count > 120
+                ? String(info.text.prefix(117)) + "…"
+                : info.text
+        }
+
+        var video = Video(
+            ytdlpId: info.id,
+            title: title,
+            description: info.text == "Tweet" ? nil : info.text,
+            uploader: info.authorName,
+            uploaderUrl: info.authorUrl,
+            platform: .twitter,
+            originalUrl: url,
+            webpageUrl: url,
+            uploadDate: nil,
+            duration: nil,
+            filePath: "",       // No local file — marks as text-only
+            fileSize: nil,
+            thumbnailPath: nil,
+            width: nil,
+            height: nil,
+            addedAt: Date(),
+            status: .completed,
+            errorMessage: nil,
+            notes: notes
+        )
+
+        guard (try? videoRepo.insert(&video)) != nil, let videoId = video.id else { return }
+
+        if !tags.isEmpty {
+            try? videoRepo.setTags(videoId: videoId, tagNames: tags)
+        }
+
+        assignToRoomOrCollection(videoId: videoId, roomId: roomId, collectionId: collectionId)
+        changeToken += 1
+    }
+
     /// Fetches metadata and saves the record without starting a download.
-    func saveURL(url: String, tags: [String]) {
+    func saveURL(
+        url: String,
+        tags: [String],
+        notes: String? = nil,
+        roomId: Int64? = nil,
+        collectionId: Int64? = nil
+    ) {
         let platform = PlatformDetector.detect(from: url)
         let fetchingTask = FetchingTask(url: url, platform: platform)
         fetchingTasks.append(fetchingTask)
 
         Task {
             do {
-                try await performSave(url: url, tags: tags, platform: platform, fetchingTask: fetchingTask)
+                try await performSave(
+                    url: url, tags: tags, notes: notes,
+                    roomId: roomId, collectionId: collectionId,
+                    platform: platform, fetchingTask: fetchingTask
+                )
             } catch {
                 fetchingTask.error = error.localizedDescription
                 try? await Task.sleep(for: .seconds(5))
@@ -149,6 +259,9 @@ final class DownloadService {
     private func performSave(
         url: String,
         tags: [String],
+        notes: String?,
+        roomId: Int64?,
+        collectionId: Int64?,
         platform: Video.Platform,
         fetchingTask: FetchingTask
     ) async throws {
@@ -176,7 +289,8 @@ final class DownloadService {
             height: metadata.height,
             addedAt: Date(),
             status: .saved,
-            errorMessage: nil
+            errorMessage: nil,
+            notes: notes
         )
 
         try videoRepo.insert(&video)
@@ -186,6 +300,8 @@ final class DownloadService {
         if !tags.isEmpty {
             try videoRepo.setTags(videoId: videoId, tagNames: tags)
         }
+
+        assignToRoomOrCollection(videoId: videoId, roomId: roomId, collectionId: collectionId)
 
         if let thumbnailUrl = metadata.thumbnail {
             let thumbService = self.thumbnailService
@@ -206,6 +322,19 @@ final class DownloadService {
 
         changeToken += 1
     }
+
+    /// Adds the video directly to a room (if only roomId given) or to a specific
+    /// collection (if collectionId given — collections are implicitly part of their room).
+    private func assignToRoomOrCollection(videoId: Int64, roomId: Int64?, collectionId: Int64?) {
+        if let collectionId {
+            try? roomRepo.addItem(videoId: videoId, collectionId: collectionId)
+        } else if let roomId {
+            try? roomRepo.addItemToRoom(videoId: videoId, roomId: roomId)
+        }
+    }
+
+    /// Notifies observers (e.g. LibraryView) that library data changed outside of a download.
+    func notifyChange() { changeToken += 1 }
 
     func cancelDownload(videoId: Int64) {
         if let process = runningProcesses[videoId] {

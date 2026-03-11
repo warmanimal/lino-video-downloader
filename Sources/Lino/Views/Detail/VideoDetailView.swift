@@ -1,4 +1,5 @@
 import SwiftUI
+import PDFKit
 
 struct VideoDetailView: View {
     let videoInfo: VideoInfo
@@ -6,6 +7,7 @@ struct VideoDetailView: View {
     var onTrash: (() -> Void)?
     var onRestore: (() -> Void)?
     var onPermanentDelete: (() -> Void)?
+    var onVideoUpdated: (() -> Void)?
     @Environment(\.appState) private var appState
     @State private var viewModel: VideoDetailViewModel?
 
@@ -25,21 +27,25 @@ struct VideoDetailView: View {
         }
         .onAppear {
             if viewModel == nil {
-                viewModel = VideoDetailViewModel(
+                let vm = VideoDetailViewModel(
                     videoInfo: videoInfo,
                     videoRepo: appState.videoRepo,
                     downloadService: appState.downloadService,
                     metadataService: appState.metadataService
                 )
+                vm.onVideoUpdated = onVideoUpdated
+                viewModel = vm
             }
         }
         .onChange(of: videoInfo.video.id) { _, _ in
-            viewModel = VideoDetailViewModel(
+            let vm = VideoDetailViewModel(
                 videoInfo: videoInfo,
                 videoRepo: appState.videoRepo,
                 downloadService: appState.downloadService,
                 metadataService: appState.metadataService
             )
+            vm.onVideoUpdated = onVideoUpdated
+            viewModel = vm
         }
     }
 }
@@ -52,6 +58,8 @@ private struct VideoDetailContent: View {
     var onPermanentDelete: (() -> Void)?
     @State private var showTrashConfirmation = false
     @State private var showPermanentDeleteConfirmation = false
+    @State private var panelHeight: CGFloat = 500
+    @State private var isDropTargeted = false
 
     private var video: Video { viewModel.videoInfo.video }
 
@@ -63,23 +71,19 @@ private struct VideoDetailContent: View {
                     trashBanner(deletedAt: deletedAt)
                 }
 
-                // Video player
-                if video.status == .completed,
-                   !isTrashView,
-                   FileManager.default.fileExists(atPath: video.absoluteFilePath.path) {
-                    VideoPlayerView(videoURL: video.absoluteFilePath)
-                        .frame(height: 300)
-                        .cornerRadius(8)
-                } else if video.status == .saved, !isTrashView, let streamURL = viewModel.streamURL {
-                    VideoPlayerView(videoURL: streamURL)
-                        .frame(height: 300)
-                        .cornerRadius(8)
-                } else {
-                    streamablePreview
-                        .frame(height: 200)
-                        .cornerRadius(8)
-                        .clipped()
-                }
+                // Image or video player — also a drop target for manual video attachment
+                previewArea
+                    .dropDestination(for: URL.self) { urls, _ in
+                        guard !isTrashView, !video.isImage, !video.isPDF, !video.isTextOnly,
+                              let url = urls.first, url.isFileURL else { return false }
+                        let ext = url.pathExtension.lowercased()
+                        guard FileImportService.videoExtensions.contains(ext) else { return false }
+                        Task { await viewModel.attachDroppedFile(url: url) }
+                        return true
+                    } isTargeted: { targeted in
+                        guard !isTrashView && !video.isImage && !video.isPDF else { return }
+                        isDropTargeted = targeted
+                    }
 
                 // Title and uploader
                 VStack(alignment: .leading, spacing: 4) {
@@ -171,6 +175,19 @@ private struct VideoDetailContent: View {
                     }
                 }
 
+                if let notes = video.notes, !notes.isEmpty {
+                    Divider()
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Notes")
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                        Text(notes)
+                            .font(.body)
+                            .foregroundStyle(.primary)
+                            .textSelection(.enabled)
+                    }
+                }
+
                 if let description = video.description, !description.isEmpty {
                     Divider()
                     VStack(alignment: .leading, spacing: 4) {
@@ -196,6 +213,10 @@ private struct VideoDetailContent: View {
             }
             .padding(16)
         }
+        .background(GeometryReader { geo in
+            Color.clear.onAppear { panelHeight = geo.size.height }
+                .onChange(of: geo.size.height) { _, h in panelHeight = h }
+        })
         .alert("Move to Trash", isPresented: $showTrashConfirmation) {
             Button("Cancel", role: .cancel) {}
             Button("Move to Trash", role: .destructive) {
@@ -214,12 +235,106 @@ private struct VideoDetailContent: View {
         }
     }
 
+    private var isPortrait: Bool {
+        guard let w = video.width, let h = video.height, w > 0 else { return false }
+        return h > w
+    }
+
+    @ViewBuilder
+    private func wrappedPlayer(url: URL) -> some View {
+        if isPortrait, let w = video.width, let h = video.height {
+            VideoPlayerView(videoURL: url)
+                .aspectRatio(CGFloat(w) / CGFloat(h), contentMode: .fit)
+                .frame(maxHeight: panelHeight * 0.85)
+                .cornerRadius(8)
+        } else {
+            VideoPlayerView(videoURL: url)
+                .frame(height: 300)
+                .cornerRadius(8)
+        }
+    }
+
+    @ViewBuilder
+    private var previewArea: some View {
+        ZStack {
+            // Main content
+            if video.isTextOnly {
+                tweetCard
+            } else if video.isImage {
+                fullImageView(maxHeight: panelHeight * 0.85)
+            } else if video.isPDF && video.status == .completed {
+                PDFPreviewView(url: video.absoluteFilePath)
+                    .frame(height: min(panelHeight * 0.65, 480))
+                    .cornerRadius(8)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8)
+                            .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
+                    )
+            } else if video.status == .completed {
+                wrappedPlayer(url: video.absoluteFilePath)
+            } else {
+                streamablePreview
+                    .frame(height: 200)
+                    .clipped()
+                    .cornerRadius(8)
+            }
+
+            // Drop-hover overlay
+            if isDropTargeted {
+                RoundedRectangle(cornerRadius: 8)
+                    .strokeBorder(Color.accentColor, style: StrokeStyle(lineWidth: 2, dash: [6]))
+                    .background(Color.accentColor.opacity(0.1).cornerRadius(8))
+                    .overlay {
+                        VStack(spacing: 6) {
+                            Image(systemName: "arrow.down.circle")
+                                .font(.title)
+                                .foregroundStyle(Color.accentColor)
+                            Text("Drop video to attach")
+                                .font(.caption)
+                                .fontWeight(.medium)
+                                .foregroundStyle(Color.accentColor)
+                        }
+                    }
+            }
+
+            // Attaching overlay
+            if viewModel.isAttaching {
+                Color.black.opacity(0.5)
+                VStack(spacing: 8) {
+                    ProgressView()
+                        .controlSize(.large)
+                        .tint(.white)
+                    Text("Attaching…")
+                        .font(.caption)
+                        .foregroundStyle(.white)
+                }
+            }
+        }
+    }
+
     private var libraryActions: some View {
         HStack(spacing: 12) {
-            Button {
-                viewModel.openOriginalURL()
-            } label: {
-                Label("Open URL", systemImage: "safari")
+            // "Open URL" only makes sense for remote sources (not local files)
+            if !(video.isPDF || video.isImage) {
+                Button {
+                    viewModel.openOriginalURL()
+                } label: {
+                    Label("Open URL", systemImage: "safari")
+                }
+            }
+
+            // "Open" and "Show in Finder" only make sense when there's a local file
+            if video.status == .completed && !video.isTextOnly {
+                Button {
+                    viewModel.openFile()
+                } label: {
+                    Label("Open", systemImage: "arrow.up.forward.app")
+                }
+                Button {
+                    viewModel.revealInFinder()
+                } label: {
+                    Label("Show in Finder", systemImage: "folder")
+                }
             }
 
             if video.status == .saved {
@@ -227,14 +342,6 @@ private struct VideoDetailContent: View {
                     Task { await viewModel.downloadVideo() }
                 } label: {
                     Label("Download", systemImage: "arrow.down.circle")
-                }
-            }
-
-            if video.status == .completed {
-                Button {
-                    viewModel.revealInFinder()
-                } label: {
-                    Label("Show in Finder", systemImage: "folder")
                 }
             }
 
@@ -338,6 +445,29 @@ private struct VideoDetailContent: View {
     }
 
     @ViewBuilder
+    private func fullImageView(maxHeight: CGFloat) -> some View {
+        let nsImage = NSImage(contentsOf: video.absoluteFilePath)
+            ?? (try? Data(contentsOf: video.absoluteFilePath)).flatMap { NSImage(data: $0) }
+        if let image = nsImage {
+            Image(nsImage: image)
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+                .frame(maxHeight: maxHeight)
+                .cornerRadius(8)
+        } else {
+            Rectangle()
+                .fill(Color(.separatorColor))
+                .frame(height: 200)
+                .cornerRadius(8)
+                .overlay {
+                    Image(systemName: "photo")
+                        .font(.largeTitle)
+                        .foregroundStyle(.secondary)
+                }
+        }
+    }
+
+    @ViewBuilder
     private var thumbnailView: some View {
         if let thumbPath = video.absoluteThumbnailPath,
            let image = NSImage(contentsOf: thumbPath) {
@@ -353,6 +483,46 @@ private struct VideoDetailContent: View {
                         .foregroundStyle(.secondary)
                 }
         }
+    }
+
+    /// Styled card shown for text-only tweets (no downloadable media).
+    @ViewBuilder
+    private var tweetCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            // Header row
+            HStack(spacing: 6) {
+                Image(systemName: "bubble.left.fill")
+                    .foregroundStyle(Color(red: 0.11, green: 0.63, blue: 0.95))
+                Text(video.uploader ?? "X / Twitter")
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                Spacer()
+                Button {
+                    viewModel.openOriginalURL()
+                } label: {
+                    Image(systemName: "arrow.up.right.circle")
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .help("Open tweet in browser")
+            }
+
+            Divider()
+
+            // Tweet body
+            Text(video.description ?? video.title)
+                .font(.body)
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color(.controlBackgroundColor))
+        .cornerRadius(12)
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .strokeBorder(Color.primary.opacity(0.1), lineWidth: 1)
+        )
     }
 
     private func metadataRow(_ label: String, value: String, valueColor: Color = .primary) -> some View {

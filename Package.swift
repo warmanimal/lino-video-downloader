@@ -20,7 +20,7 @@ let package = Package(
             ],
             path: "Sources/Lino",
             exclude: ["Resources/Info.plist"],
-            resources: [.copy("Resources/AppIcon.icns")]
+            resources: [.copy("Resources/AppIcon.icns"), .copy("Resources/Plugins")]
         ),
         .testTarget(
             name: "LinoTests",

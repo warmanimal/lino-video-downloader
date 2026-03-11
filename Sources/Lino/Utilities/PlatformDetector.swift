@@ -19,6 +19,9 @@ enum PlatformDetector {
         if lowered.contains("pinterest.com") || lowered.contains("pin.it") {
             return .pinterest
         }
+        if lowered.contains("suno.com") {
+            return .suno
+        }
 
         return .other
     }

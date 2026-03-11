@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 struct VideoListView: View {
     let videos: [VideoInfo]
@@ -9,6 +10,45 @@ struct VideoListView: View {
             ForEach(videos) { videoInfo in
                 VideoListRowView(videoInfo: videoInfo)
                     .tag(videoInfo.video.id)
+                    .onTapGesture(count: 2) {
+                        guard videoInfo.video.status == .completed,
+                              !videoInfo.video.isTextOnly else { return }
+                        NSWorkspace.shared.open(videoInfo.video.absoluteFilePath)
+                    }
+                    .onDrag {
+                        guard videoInfo.video.status == .completed,
+                              !videoInfo.video.isTextOnly else { return NSItemProvider() }
+                        return NSItemProvider(object: videoInfo.video.absoluteFilePath as NSURL)
+                    }
+                    .contextMenu {
+                        if videoInfo.video.status == .completed && !videoInfo.video.isTextOnly {
+                            Button {
+                                NSWorkspace.shared.open(videoInfo.video.absoluteFilePath)
+                            } label: {
+                                Label("Open", systemImage: "arrow.up.forward.app")
+                            }
+                            Button {
+                                NSWorkspace.shared.selectFile(
+                                    videoInfo.video.absoluteFilePath.path,
+                                    inFileViewerRootedAtPath: videoInfo.video.absoluteFilePath
+                                        .deletingLastPathComponent().path
+                                )
+                            } label: {
+                                Label("Show in Finder", systemImage: "folder")
+                            }
+                            Divider()
+                        }
+                        let originalUrl = videoInfo.video.originalUrl
+                        if originalUrl.hasPrefix("http") {
+                            Button {
+                                if let url = URL(string: originalUrl) {
+                                    NSWorkspace.shared.open(url)
+                                }
+                            } label: {
+                                Label("Open Source URL", systemImage: "safari")
+                            }
+                        }
+                    }
             }
         }
         .listStyle(.inset(alternatesRowBackgrounds: true))
@@ -43,13 +83,43 @@ struct VideoListRowView: View {
 
             Spacer()
 
-            // Platform
-            HStack(spacing: 4) {
-                PlatformBadgeView(platform: video.platform, size: 10)
-                Text(video.platform.displayName)
+            // Platform / type indicator
+            if video.isPDF {
+                Text("PDF")
                     .font(.caption)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 2)
+                    .background(Color.red.opacity(0.8))
+                    .cornerRadius(3)
+                    .frame(width: 70, alignment: .leading)
+            } else if video.isImage {
+                HStack(spacing: 4) {
+                    Image(systemName: "photo")
+                        .font(.caption2)
+                    Text("Image")
+                        .font(.caption)
+                }
+                .foregroundStyle(.secondary)
+                .frame(width: 70, alignment: .leading)
+            } else if video.isTextOnly {
+                HStack(spacing: 4) {
+                    Image(systemName: "text.quote")
+                        .font(.caption2)
+                    Text("Post")
+                        .font(.caption)
+                }
+                .foregroundStyle(.secondary)
+                .frame(width: 70, alignment: .leading)
+            } else {
+                HStack(spacing: 4) {
+                    PlatformBadgeView(platform: video.platform, size: 10)
+                    Text(video.platform.displayName)
+                        .font(.caption)
+                }
+                .frame(width: 70, alignment: .leading)
             }
-            .frame(width: 70, alignment: .leading)
 
             // Tags
             if !videoInfo.tags.isEmpty {
@@ -98,8 +168,18 @@ struct VideoListRowView: View {
 
     @ViewBuilder
     private var thumbnailCell: some View {
-        if let thumbPath = video.absoluteThumbnailPath,
-           let image = NSImage(contentsOf: thumbPath) {
+        if video.isTextOnly {
+            Rectangle()
+                .fill(Color(.controlBackgroundColor))
+                .overlay(alignment: .topLeading) {
+                    Text(video.description ?? video.title)
+                        .font(.system(size: 7))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(4)
+                        .padding(4)
+                }
+        } else if let thumbPath = video.absoluteThumbnailPath,
+                  let image = NSImage(contentsOf: thumbPath) {
             Image(nsImage: image)
                 .resizable()
                 .aspectRatio(contentMode: .fill)
@@ -107,7 +187,8 @@ struct VideoListRowView: View {
             Rectangle()
                 .fill(Color(.separatorColor))
                 .overlay {
-                    Image(systemName: "film")
+                    let icon = video.isPDF ? "doc.richtext" : (video.isImage ? "photo" : "film")
+                    Image(systemName: icon)
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                 }

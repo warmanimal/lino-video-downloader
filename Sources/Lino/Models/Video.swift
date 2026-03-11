@@ -21,6 +21,7 @@ struct Video: Codable, FetchableRecord, MutablePersistableRecord, Identifiable, 
     var addedAt: Date
     var status: DownloadStatus
     var errorMessage: String?
+    var notes: String?       // user-authored notes; nil if none
     var deletedAt: Date?
 
     enum DownloadStatus: String, Codable, DatabaseValueConvertible, Sendable {
@@ -37,6 +38,7 @@ struct Video: Codable, FetchableRecord, MutablePersistableRecord, Identifiable, 
         case instagram
         case twitter
         case pinterest
+        case suno
         case other
 
         var displayName: String {
@@ -46,6 +48,7 @@ struct Video: Codable, FetchableRecord, MutablePersistableRecord, Identifiable, 
             case .instagram: return "Instagram"
             case .twitter: return "X"
             case .pinterest: return "Pinterest"
+            case .suno: return "Suno"
             case .other: return "Other"
             }
         }
@@ -57,6 +60,7 @@ struct Video: Codable, FetchableRecord, MutablePersistableRecord, Identifiable, 
             case .instagram: return "camera.fill"
             case .twitter: return "bubble.left.fill"
             case .pinterest: return "pin.fill"
+            case .suno: return "waveform"
             case .other: return "globe"
             }
         }
@@ -88,6 +92,18 @@ struct Video: Codable, FetchableRecord, MutablePersistableRecord, Identifiable, 
     }
 
     var isDeleted: Bool { deletedAt != nil }
+
+    /// True when no local file exists — e.g. a text-only tweet saved as a bookmark.
+    var isTextOnly: Bool { filePath.isEmpty }
+
+    var isImage: Bool {
+        let ext = (filePath as NSString).pathExtension.lowercased()
+        return FileImportService.imageExtensions.contains(ext)
+    }
+
+    var isPDF: Bool {
+        (filePath as NSString).pathExtension.lowercased() == "pdf"
+    }
 
     var absoluteFilePath: URL {
         Constants.storageDir.appendingPathComponent(filePath)

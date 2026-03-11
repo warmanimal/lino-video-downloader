@@ -23,6 +23,14 @@ enum Constants {
         appSupportDir.appendingPathComponent("bin")
     }
 
+    /// The directory where Lino installs its yt-dlp extractor plugins.
+    /// yt-dlp scans ~/.config/yt-dlp/plugins/ for plugin packages on every run.
+    static var ytdlpPluginDir: URL {
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        return home
+            .appendingPathComponent(".config/yt-dlp/plugins/suno/yt_dlp_plugins/extractor")
+    }
+
     /// The managed copy in app support (used when we have a standalone binary)
     static var ytdlpManagedPath: URL {
         ytdlpBinDir.appendingPathComponent("yt-dlp")
@@ -118,7 +126,7 @@ enum Constants {
 
     static func ensureDirectoriesExist() throws {
         let fm = FileManager.default
-        for dir in [storageDir, thumbnailDir, appSupportDir, ytdlpBinDir] {
+        for dir in [storageDir, thumbnailDir, appSupportDir, ytdlpBinDir, ytdlpPluginDir] {
             if !fm.fileExists(atPath: dir.path) {
                 try fm.createDirectory(at: dir, withIntermediateDirectories: true)
             }
